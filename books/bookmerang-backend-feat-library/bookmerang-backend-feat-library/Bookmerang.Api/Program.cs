@@ -11,6 +11,8 @@ using Bookmerang.Api.Data;
 using Bookmerang.Api.Middleware;          
 using Microsoft.OpenApi.Models;           
 using Npgsql;
+using System.Data;
+using System.Data.Common;
 
 DotNetEnv.Env.Load();
 //DotNetEnv.Env.Load(File.Exists(".env.local") ? ".env.local" : ".env"); //para desarrollo
@@ -160,6 +162,7 @@ var app = builder.Build();
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    await EnsureSupabaseIdColumnAsync(db);
     await DataSeeder.SeedAsync(db);
 }
 
@@ -191,3 +194,46 @@ app.MapControllers();
 app.MapGet("/", () => Results.Redirect("/swagger"));
 
 app.Run();
+
+static async Task EnsureSupabaseIdColumnAsync(AppDbContext db)
+{
+    await using var connection = db.Database.GetDbConnection();
+    if (connection.State != ConnectionState.Open)
+        await connection.OpenAsync();
+
+    static async Task<bool> ColumnExistsAsync(DbConnection conn, string columnName)
+    {
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = @"
+            SELECT EXISTS (
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = 'base_users'
+                  AND column_name = @column
+            );";
+
+        var parameter = cmd.CreateParameter();
+        parameter.ParameterName = "@column";
+        parameter.Value = columnName;
+        cmd.Parameters.Add(parameter);
+
+        var result = await cmd.ExecuteScalarAsync();
+        return result is bool exists && exists;
+    }
+
+    if (await ColumnExistsAsync(connection, "supabase_id"))
+        return;
+
+    if (await ColumnExistsAsync(connection, "supabase_uid"))
+    {
+        await db.Database.ExecuteSqlRawAsync("ALTER TABLE base_users RENAME COLUMN supabase_uid TO supabase_id;");
+        await db.Database.ExecuteSqlRawAsync("CREATE UNIQUE INDEX IF NOT EXISTS ix_base_users_supabase_id ON base_users (supabase_id);");
+        Console.WriteLine("[startup] Renombrada columna legacy 'supabase_uid' -> 'supabase_id' en base_users.");
+        return;
+    }
+
+    await db.Database.ExecuteSqlRawAsync("ALTER TABLE base_users ADD COLUMN IF NOT EXISTS supabase_id text;");
+    await db.Database.ExecuteSqlRawAsync("CREATE UNIQUE INDEX IF NOT EXISTS ix_base_users_supabase_id ON base_users (supabase_id);");
+    Console.WriteLine("[startup] Creada columna faltante 'supabase_id' en base_users.");
+}

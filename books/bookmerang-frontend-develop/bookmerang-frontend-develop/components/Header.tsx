@@ -1,16 +1,14 @@
-import { View, Text, TouchableOpacity, Image } from 'react-native';
+import { View, Text, TouchableOpacity } from 'react-native';
 import { router } from 'expo-router';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 
 export default function Header() {
   const handleProfilePress = () => {
-    // TODO: Navegar al perfil cuando esté implementado
-    // router.push('/profile');
-    console.log('Ir a perfil');
+    router.push('/profile' as any);
   };
 
   return (
-    <View className="bg-white border-b border-gray-200 px-4 py-3 flex-row items-center justify-between">
+    <View className="bg-white border-b border-[#f2cc8f] px-4 py-3 flex-row items-center justify-between">
       {/* Foto de perfil */}
       <TouchableOpacity onPress={handleProfilePress}>
         <View className="w-10 h-10 rounded-full bg-[#e07a5f] items-center justify-center">
